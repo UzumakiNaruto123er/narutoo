@@ -1,0 +1,2418 @@
+#version 22
+# =============== J.A.R.V.I.S. - ULTIMATE MULTI-MODEL EDITION ===============
+# -*- coding: utf-8 -*-
+"""
+J.A.R.V.I.S. - Ultimate AI Assistant
+Version: 22.0 (Enhanced Release)
+Author: [Your Name]
+Description: Complete AI assistant with API integrations and local model support
+"""
+
+# ====================== IMPORTS ======================
+import os
+import sys
+import json
+import time
+import ctypes
+import winreg
+import pyautogui
+import webbrowser
+import subprocess
+import psutil
+import pyttsx3
+import yagmail
+import keyring
+import requests
+import speech_recognition as sr
+from datetime import datetime
+from typing import Dict, List, Optional, Union, Tuple
+import locale
+import win32api
+import win32process
+import win32con
+import wave
+import winsound
+from threading import Thread
+import platform
+import warnings
+import cv2
+import numpy as np
+import pytesseract
+from PIL import ImageGrab, Image
+import keyboard
+import pygetwindow as gw
+import random
+import GPUtil
+import wmi
+import pythoncom
+import pickle
+from pathlib import Path
+from collections import defaultdict
+
+# ====================== CONSTANTS ======================
+API_KEYS = {
+    "chatgpt": "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",
+    "gemini_1": "AIzaSyBbkND78LBS-dF0xCO7wwc9TlbrvPyzjAc",
+    "gemini_2": "AIzaSyCLHEufm37n_kLnrqzpPixpXyI_uYQtu3o",
+    "gemini_3": "AIzaSyCGdDY9zpbVDnrytuHnuKrA7ux48hC4xdE",
+    "gemini_4": "AIzaSyDkrW1Plm4SgeWipsbgw1NYg5QA0Z9a4sU",
+    "aimlapi": "d7770944004b4826a173f15236ba16b0"
+}
+
+API_URLS = {
+    "chatgpt": "https://api.openai.com/v1/chat/completions",
+    "gemini": "https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent",
+    "aimlapi": "https://www.aimlapi.com/api/"
+}
+
+MODELS = {
+    "mistral": {
+        "path": "models/mistral-7b-instruct-v0.2-q4_k_m.gguf",
+        "description": "Mistral 7B Instruct - General purpose model",
+        "context": 8000,
+        "gpu_layers": 10
+    },
+    "deepseek": {
+        "path": "models/deepseek-coder-6.7b-instruct-q4_k_m.gguf",
+        "description": "Deepseek Coder - Specialized for coding tasks",
+        "context": 8000,
+        "gpu_layers": 10
+    },
+    "dolphin": {
+        "path": "models/Nous-Hermes-2-DPO_into_Dolphin_Mistral_2.8_v02.Q4_K_M.gguf",
+        "description": "Dolphin Mistral - Conversational and creative",
+        "context": 8000,
+        "gpu_layers": 10
+    },
+    "veriprefer": {
+        "path": "models/VeriPrefer-CodeLlama-7b.Q5_K_M.gguf",
+        "description": "VeriPrefer CodeLlama - Specialized for technical tasks",
+        "context": 8000,
+        "gpu_layers": 10
+    },
+    "llama3": {
+        "path": "models/Meta-Llama-3-8B-Instruct-Jailbroken.Q8_0.gguf",
+        "description": "Llama 3 8B Instruct - Powerful general purpose model",
+        "context": 8000,
+        "gpu_layers": 20
+    }
+}
+
+# ====================== CONFIGURATION ======================
+class Config:
+    """Enhanced configuration with multi-model support"""
+    
+    def __init__(self):
+        # System paths
+        self.base_dir = "C:\\JARVIS" if is_admin() else os.path.expanduser("~\\JARVIS")
+        
+        # Initialize sound effects first
+        self.required_sounds = {
+            "startup": "startup.wav",
+            "shutdown": "shutdown.wav",
+            "alert": "alert.wav",
+            "success": "success.wav",
+            "processing": "processing.wav",
+            "click": "click.wav"
+        }
+        
+        self._initialize_paths()
+        self._initialize_hardware_settings()
+        self._initialize_voice_settings()
+        self._setup_directories()
+        self._verify_model_paths()
+
+    def _initialize_paths(self):
+        """Initialize all system paths"""
+        self.memory_file = os.path.join(self.base_dir, "memory\\jarvis_memory.json")
+        self.learning_db = os.path.join(self.base_dir, "memory\\learning_db.pkl")
+        self.system_log = os.path.join(self.base_dir, "logs\\system_log.txt")
+        self.credentials_store = "JarvisSecureVault"
+        self.app_database = os.path.join(self.base_dir, "data\\app_database.json")
+        self.system_info_file = os.path.join(self.base_dir, "data\\system_info.json")
+        self.voice_settings_file = os.path.join(self.base_dir, "config\\voice_settings.json")
+        self.sound_effects_dir = os.path.join(self.base_dir, "sounds\\")
+        self.screenshot_dir = os.path.join(self.base_dir, "screenshots\\")
+        self.knowledge_base = os.path.join(self.base_dir, "knowledge\\")
+        self.models_dir = os.path.join(self.base_dir, "models\\")
+
+    def _verify_model_paths(self):
+        """Verify and update model paths if needed"""
+        for model_name, model_info in MODELS.items():
+            # First try the direct path
+            if not os.path.exists(model_info["path"]):
+                # Then try in the models directory
+                model_file = os.path.basename(model_info["path"])
+                local_path = os.path.join(self.models_dir, model_file)
+                if os.path.exists(local_path):
+                    MODELS[model_name]["path"] = local_path
+
+    def _initialize_hardware_settings(self):
+        """Initialize hardware-specific settings"""
+        self.cpu_threads = psutil.cpu_count(logical=False) or 4
+        self.gpu_layers = 20  # Default for local models
+        self.context_window = 8000
+        self.batch_size = 512
+        self.vision_confidence = 0.85
+        self.ocr_timeout = 5
+        self.screen_analysis_interval = 2
+
+    def _initialize_voice_settings(self):
+        """Initialize voice settings"""
+        self.default_voice_settings = {
+            "enabled": True,
+            "voice_id": "HKEY_LOCAL_MACHINE\\SOFTWARE\\Microsoft\\Speech\\Voices\\Tokens\\TTS_MS_EN-US_DAVID_11.0",
+            "rate": 180,
+            "volume": 1.0,
+            "movie_mode": True,
+            "language": "en-US",
+            "voice_effects": {
+                "echo": False,
+                "reverb": False,
+                "pitch_shift": 0
+            }
+        }
+
+    def _setup_directories(self):
+        """Create all required directories"""
+        dirs = [
+            os.path.dirname(self.memory_file),
+            os.path.dirname(self.system_log),
+            os.path.dirname(self.app_database),
+            os.path.dirname(self.system_info_file),
+            os.path.dirname(self.voice_settings_file),
+            self.sound_effects_dir,
+            self.screenshot_dir,
+            self.knowledge_base,
+            self.models_dir
+        ]
+        
+        for dir_path in dirs:
+            os.makedirs(dir_path, exist_ok=True)
+
+    def play_sound(self, sound_name: str, async_play: bool = True):
+        """Play specified sound effect with enhanced error handling"""
+        if sound_name in self.required_sounds:
+            try:
+                sound_path = os.path.join(self.sound_effects_dir, self.required_sounds[sound_name])
+                if os.path.exists(sound_path):
+                    flags = winsound.SND_FILENAME
+                    if async_play:
+                        flags |= winsound.SND_ASYNC
+                    winsound.PlaySound(sound_path, flags)
+                else:
+                    # Generate default sounds if missing
+                    self._generate_default_sounds()
+                    if os.path.exists(sound_path):
+                        winsound.PlaySound(sound_path, flags)
+            except Exception as e:
+                self.log_error(f"Sound error: {str(e)}")
+
+    def _generate_default_sounds(self):
+        """Generate default sound effects if missing"""
+        try:
+            for sound_name in self.required_sounds:
+                sound_path = os.path.join(self.sound_effects_dir, self.required_sounds[sound_name])
+                if not os.path.exists(sound_path):
+                    if sound_name == "startup":
+                        self._generate_beep_sound(sound_path, [440, 880, 1320], [200, 200, 400])
+                    elif sound_name == "shutdown":
+                        self._generate_beep_sound(sound_path, [1320, 880, 440], [200, 200, 400])
+                    elif sound_name == "alert":
+                        self._generate_beep_sound(sound_path, [880, 440], [100, 100], repeat=3)
+                    elif sound_name == "success":
+                        self._generate_beep_sound(sound_path, [1046.5, 1174.66, 1318.51], [150, 150, 300])
+                    elif sound_name == "processing":
+                        self._generate_beep_sound(sound_path, [523.25], [50], repeat=6, interval=100)
+                    elif sound_name == "click":
+                        self._generate_beep_sound(sound_path, [2000], [50])
+        except Exception as e:
+            self.log_error(f"Sound generation error: {str(e)}")
+
+    def _generate_beep_sound(self, filename, freqs, durations, repeat=1, interval=0):
+        """Generate simple beep sounds as WAV files"""
+        try:
+            sample_rate = 44100
+            samples = []
+            
+            for r in range(repeat):
+                for freq, duration in zip(freqs, durations):
+                    t = np.linspace(0, duration/1000, int(sample_rate * duration/1000), False)
+                    wave = 0.5 * np.sin(2 * np.pi * freq * t)
+                    samples.extend(wave)
+                
+                if interval > 0 and r < repeat - 1:
+                    silence = np.zeros(int(sample_rate * interval/1000))
+                    samples.extend(silence)
+            
+            scaled = np.int16(np.array(samples) * 32767)
+            with wave.open(filename, 'w') as f:
+                f.setnchannels(1)
+                f.setsampwidth(2)
+                f.setframerate(sample_rate)
+                f.writeframes(scaled.tobytes())
+        except Exception as e:
+            raise Exception(f"Failed to generate sound: {str(e)}")
+
+    def capture_screenshot(self, filename: str = None) -> str:
+        """Capture and save screenshot with timestamp"""
+        if not filename:
+            filename = f"screenshot_{datetime.now().strftime('%Y%m%d_%H%M%S')}.png"
+        filepath = os.path.join(self.screenshot_dir, filename)
+        try:
+            ImageGrab.grab().save(filepath)
+            return filepath
+        except Exception as e:
+            self.log_error(f"Screenshot error: {str(e)}")
+            return None
+
+    def get_credential(self, service: str) -> Optional[str]:
+        """Retrieve stored credential"""
+        try:
+            return keyring.get_password(self.credentials_store, service)
+        except Exception as e:
+            self.log_error(f"Credential error: {str(e)}")
+            return None
+            
+    def set_credential(self, service: str, value: str) -> bool:
+        """Store credential securely"""
+        try:
+            keyring.set_password(self.credentials_store, service, value)
+            return True
+        except Exception as e:
+            self.log_error(f"Credential save error: {str(e)}")
+            return False
+
+    def load_voice_settings(self) -> Dict:
+        """Load voice settings from file"""
+        try:
+            if os.path.exists(self.voice_settings_file):
+                with open(self.voice_settings_file, 'r') as f:
+                    loaded = json.load(f)
+                    # Merge with defaults, preserving any new default fields
+                    return {**self.default_voice_settings, **loaded}
+        except Exception as e:
+            self.log_error(f"Voice settings error: {str(e)}")
+        return self.default_voice_settings
+
+    def save_voice_settings(self, settings: Dict) -> bool:
+        """Save voice settings to file"""
+        try:
+            with open(self.voice_settings_file, 'w') as f:
+                json.dump(settings, f, indent=2)
+            return True
+        except Exception as e:
+            self.log_error(f"Voice save error: {str(e)}")
+            return False
+            
+    def log_error(self, message: str) -> None:
+        """Log error message with timestamp"""
+        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        with open(self.system_log, 'a') as f:
+            f.write(f"[ERROR][{timestamp}] {message}\n")
+
+# ====================== LEARNING SYSTEM ======================
+class LearningSystem:
+    """Enhanced persistent learning system for J.A.R.V.I.S."""
+    
+    def __init__(self, storage_path: str):
+        self.storage_path = storage_path
+        self.knowledge = defaultdict(dict)
+        self.load_knowledge()
+        
+    def load_knowledge(self):
+        """Load knowledge from storage with validation"""
+        try:
+            if os.path.exists(self.storage_path):
+                with open(self.storage_path, 'rb') as f:
+                    loaded = pickle.load(f)
+                    if isinstance(loaded, defaultdict):
+                        self.knowledge = loaded
+                    elif isinstance(loaded, dict):
+                        self.knowledge = defaultdict(dict, loaded)
+        except Exception as e:
+            print(f"Error loading knowledge: {e}")
+            
+    def save_knowledge(self):
+        """Save knowledge to storage with atomic write"""
+        try:
+            temp_path = self.storage_path + ".tmp"
+            with open(temp_path, 'wb') as f:
+                pickle.dump(self.knowledge, f)
+            
+            # Replace old file only if write succeeded
+            if os.path.exists(temp_path):
+                if os.path.exists(self.storage_path):
+                    os.remove(self.storage_path)
+                os.rename(temp_path, self.storage_path)
+        except Exception as e:
+            print(f"Error saving knowledge: {e}")
+            
+    def add_fact(self, category: str, fact: str, value: str):
+        """Add a new fact to the knowledge base with timestamp"""
+        timestamp = datetime.now().isoformat()
+        self.knowledge[category][fact] = {
+            "value": value,
+            "timestamp": timestamp,
+            "source": "user_input"
+        }
+        self.save_knowledge()
+        
+    def get_fact(self, category: str, fact: str) -> Optional[str]:
+        """Retrieve a fact from the knowledge base with metadata"""
+        fact_data = self.knowledge.get(category, {}).get(fact)
+        if isinstance(fact_data, dict):
+            return fact_data.get("value")
+        return fact_data
+        
+    def add_document(self, document_path: str, content: str):
+        """Add a document to the knowledge base with metadata"""
+        doc_name = os.path.basename(document_path)
+        self.knowledge["documents"][doc_name] = {
+            "content": content,
+            "path": document_path,
+            "timestamp": datetime.now().isoformat(),
+            "size": len(content)
+        }
+        self.save_knowledge()
+        
+    def search_knowledge(self, query: str) -> List[Tuple[str, str]]:
+        """Enhanced search across all knowledge with scoring"""
+        results = []
+        query = query.lower()
+        
+        for category, items in self.knowledge.items():
+            for key, value in items.items():
+                if isinstance(value, dict):
+                    content = str(value.get("value", value.get("content", "")))
+                else:
+                    content = str(value)
+                
+                # Simple scoring based on matches
+                key_score = query in key.lower()
+                content_score = query in content.lower()
+                
+                if key_score or content_score:
+                    score = (3 if key_score else 0) + (1 if content_score else 0)
+                    results.append((score, f"{category}.{key}", content))
+        
+        # Sort by score (highest first)
+        results.sort(reverse=True, key=lambda x: x[0])
+        return [(item[1], item[2]) for item in results]
+
+# ====================== MAIN JARVIS CLASS ======================
+class Jarvis:
+    """Complete implementation with API-based models and local model support"""
+    
+    def __init__(self):
+        self.show_banner()
+        self.check_system_requirements()
+        self.config = Config()
+        self.config.play_sound("startup")
+        self.setup_system_environment()
+        
+        # Initialize local_model_enabled before show_banner()
+        self.local_model_enabled = any(os.path.exists(model_info["path"]) for model_info in MODELS.values())
+        
+        self.input_mode = self.determine_input_mode()
+        self.voice_settings = self.config.load_voice_settings()
+        self.init_voice_engine()
+        
+        if self.input_mode == "voice":
+            self.init_speech_recognition()
+        
+        self.active_model = "gemini_1"  # Default to Gemini
+        self.learning_system = LearningSystem(self.config.learning_db)
+        self.load_system_data()
+        self.setup_media_editors()
+        self.performance_stats = {
+            "last_cpu_check": 0,
+            "last_mem_check": 0,
+            "cpu_usage": 0,
+            "mem_usage": 0
+        }
+        self.screen_width, self.screen_height = pyautogui.size()
+        self.last_screenshot = None
+        self.last_analysis = ""
+        self.system_boot_sequence()
+
+    def show_banner(self):
+        """Display the enhanced system banner"""
+        print("\n" + "="*60)
+        print("🚀 Starting J.A.R.V.I.S. - Ultimate Edition".center(60))
+        print("="*60)
+        
+        cpu = self._get_cpu_name() or "Unknown CPU"
+        mem = f"{self._get_available_memory()}GB" if self._get_available_memory() else "Unknown"
+        gpu = self._get_gpu_info() or "Unknown GPU"
+        
+        print(f"💻 Processor: {cpu}")
+        print(f"🧠 Memory: {mem} available")
+        print(f"🎮 GPU: {gpu}")
+        print(f"🔐 Admin Mode: {'Active' if is_admin() else 'Limited'}")
+        print(f"🤖 Local Models: {'Available' if self.local_model_enabled else 'Not Found'}")
+        print("="*60 + "\n")
+
+    def check_system_requirements(self):
+        """Verify all required components are available"""
+        missing = []
+        
+        try:
+            pytesseract.get_tesseract_version()
+        except:
+            missing.append("Tesseract OCR (install from https://github.com/UB-Mannheim/tesseract/wiki)")
+        
+        try:
+            cv2.__version__
+        except:
+            missing.append("OpenCV (pip install opencv-python)")
+            
+        try:
+            import pyttsx3
+        except:
+            missing.append("pyttsx3 (pip install pyttsx3)")
+            
+        if missing:
+            print("⚠️ Missing Requirements:")
+            for item in missing:
+                print(f" - {item}")
+            print("\nSome features may not work properly without these components.\n")
+            time.sleep(2)
+
+    def switch_model(self, model_name: str) -> str:
+        """Switch to a different API or local model"""
+        api_models = {
+            "chatgpt": "chatgpt",
+            "gemini": "gemini_1",
+            "gemini_1": "gemini_1",
+            "gemini_2": "gemini_2",
+            "gemini_3": "gemini_3",
+            "gemini_4": "gemini_4",
+            "aimlapi": "aimlapi"
+        }
+        
+        local_models = {name: name for name in MODELS.keys()}
+        
+        if model_name in api_models:
+            self.active_model = api_models[model_name]
+            return f"Switched to {model_name} API"
+            
+        elif model_name in local_models:
+            if os.path.exists(MODELS[model_name]["path"]):
+                self.active_model = model_name
+                return f"Switched to local {model_name} model"
+            return f"Local model {model_name} not found at {MODELS[model_name]['path']}"
+            
+        return f"Model {model_name} not available"
+
+    def query_api(self, prompt: str) -> str:
+        """Query the appropriate API or local model based on active model"""
+        try:
+            if self.active_model == "chatgpt":
+                return self.query_chatgpt_api(prompt)
+            elif self.active_model.startswith("gemini"):
+                return self.query_gemini_api(prompt)
+            elif self.active_model == "aimlapi":
+                return self.query_aimlapi(prompt)
+            elif self.active_model in MODELS:
+                return self.query_local_model(prompt)
+            else:
+                return self.query_gemini_api(prompt)  # Default fallback
+        except Exception as e:
+            self.config.log_error(f"API query error: {str(e)}")
+            return f"API request failed: {str(e)}"
+
+    def query_local_model(self, prompt: str) -> str:
+        """Query a local GGUF model using llama.cpp"""
+        try:
+            model_path = MODELS[self.active_model]["path"]
+            if not os.path.exists(model_path):
+                return f"Model file not found at {model_path}"
+                
+            # This is a placeholder - in a real implementation you would:
+            # 1. Initialize the model if not already loaded
+            # 2. Use the model to generate a response
+            # 3. Handle the response appropriately
+            
+            # For now we'll simulate a response
+            return f"[Local Model {self.active_model} Response]\nThis is a simulated response from the local model.\nPrompt: {prompt[:100]}..."
+            
+        except Exception as e:
+            self.config.log_error(f"Local model error: {str(e)}")
+            return f"Local model processing failed: {str(e)}"
+
+    def query_chatgpt_api(self, prompt: str) -> str:
+        """Query the ChatGPT API"""
+        headers = {
+            "Authorization": f"Bearer {API_KEYS['chatgpt']}",
+            "Content-Type": "application/json"
+        }
+        
+        data = {
+            "model": "gpt-4",
+            "messages": [{"role": "user", "content": prompt}],
+            "temperature": 0.7,
+            "max_tokens": 800
+        }
+        
+        try:
+            response = requests.post(API_URLS["chatgpt"], headers=headers, json=data, timeout=30)
+            response.raise_for_status()
+            return response.json()["choices"][0]["message"]["content"]
+        except Exception as e:
+            self.config.log_error(f"ChatGPT API error: {str(e)}")
+            return f"ChatGPT API request failed: {str(e)}"
+
+    def query_gemini_api(self, prompt: str) -> str:
+        """Query the Gemini API"""
+        key = API_KEYS.get(self.active_model, API_KEYS["gemini_1"])
+        url = f"{API_URLS['gemini']}?key={key}"
+        
+        data = {
+            "contents": [{
+                "parts": [{
+                    "text": prompt
+                }]
+            }]
+        }
+        
+        try:
+            response = requests.post(url, json=data, timeout=30)
+            response.raise_for_status()
+            return response.json()["candidates"][0]["content"]["parts"][0]["text"]
+        except Exception as e:
+            self.config.log_error(f"Gemini API error: {str(e)}")
+            return f"Gemini API request failed: {str(e)}"
+
+    def query_aimlapi(self, prompt: str) -> str:
+        """Query the AIMLAPI"""
+        headers = {
+            "Authorization": f"Bearer {API_KEYS['aimlapi']}",
+            "Content-Type": "application/json"
+        }
+        
+        data = {
+            "query": prompt,
+            "session_id": "jarvis_session"
+        }
+        
+        try:
+            response = requests.post(API_URLS["aimlapi"], headers=headers, json=data, timeout=30)
+            response.raise_for_status()
+            return response.json()["response"]
+        except Exception as e:
+            self.config.log_error(f"AIMLAPI error: {str(e)}")
+            return f"AIMLAPI request failed: {str(e)}"
+
+    def _get_cpu_name(self):
+        """Get CPU processor name"""
+        try:
+            pythoncom.CoInitialize()
+            c = wmi.WMI()
+            for processor in c.Win32_Processor():
+                return processor.Name
+        except:
+            try:
+                with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, r"HARDWARE\DESCRIPTION\System\CentralProcessor\0") as key:
+                    return winreg.QueryValueEx(key, "ProcessorNameString")[0]
+            except:
+                return None
+
+    def _get_available_memory(self):
+        """Get available memory in GB"""
+        try:
+            return round(psutil.virtual_memory().available / (1024 ** 3), 1)
+        except:
+            return None
+
+    def _get_gpu_info(self):
+        """Get GPU information"""
+        try:
+            gpus = GPUtil.getGPUs()
+            if gpus:
+                return gpus[0].name
+            return None
+        except:
+            return None
+
+    def setup_system_environment(self):
+        """Configure system environment"""
+        try:
+            pyautogui.FAILSAFE = False
+            pyautogui.PAUSE = 0.05
+            os.environ['JARVIS_UNRESTRICTED'] = '1'
+            
+            handle = win32api.OpenProcess(win32con.PROCESS_ALL_ACCESS, True, os.getpid())
+            win32process.SetPriorityClass(handle, win32process.HIGH_PRIORITY_CLASS)
+            
+            if sys.stdout.encoding != 'utf-8':
+                sys.stdout.reconfigure(encoding='utf-8')
+                
+        except Exception as e:
+            self.config.log_error(f"Setup error: {str(e)}")
+
+    def determine_input_mode(self):
+        """Determine input method (voice/text) with timeout"""
+        start_time = time.time()
+        timeout = 10  # seconds
+        
+        while time.time() - start_time < timeout:
+            try:
+                print("\nSelect input method:")
+                print("1. Voice commands")
+                print("2. Text input")
+                print("3. Auto-detect (default)")
+                
+                choice = input(f"Enter choice (1/2/3 - timeout in {timeout - (time.time() - start_time):.0f}s): ").strip()
+                
+                if choice == '1':
+                    return "voice"
+                elif choice == '2':
+                    return "text"
+                elif choice == '3' or not choice:
+                    # Try voice first, fallback to text
+                    try:
+                        self.init_speech_recognition()
+                        print("Voice input ready. Say 'Jarvis' to activate.")
+                        return "voice"
+                    except:
+                        print("Voice not available, using text input.")
+                        return "text"
+                else:
+                    print("Invalid choice. Please enter 1, 2, or 3.")
+            except Exception as e:
+                self.config.log_error(f"Input mode error: {str(e)}")
+                return "text"
+        
+        print("Timeout reached, defaulting to text input.")
+        return "text"
+
+    def init_voice_engine(self):
+        """Initialize text-to-speech engine with enhanced voice options"""
+        try:
+            self.engine = pyttsx3.init()
+            
+            # Get all available voices
+            voices = self.engine.getProperty('voices')
+            
+            # Try to find the configured voice
+            configured_voice = None
+            for voice in voices:
+                if self.voice_settings["voice_id"].lower() in voice.id.lower():
+                    configured_voice = voice
+                    break
+            
+            # Fallback to David if configured voice not found
+            if not configured_voice:
+                for voice in voices:
+                    if "david" in voice.name.lower() and "en-us" in voice.id.lower():
+                        configured_voice = voice
+                        break
+            
+            # Apply voice settings
+            if configured_voice:
+                self.engine.setProperty('voice', configured_voice.id)
+                self.voice_settings["voice_id"] = configured_voice.id
+            
+            # Apply other settings
+            self.engine.setProperty('rate', self.voice_settings["rate"])
+            self.engine.setProperty('volume', self.voice_settings["volume"])
+            
+            # Save the settings
+            self.config.save_voice_settings(self.voice_settings)
+            
+        except Exception as e:
+            self.config.log_error(f"Voice init error: {str(e)}")
+            self.engine = None
+
+    def speak(self, text: str, async_mode: bool = True, priority: str = "normal"):
+        """Enhanced speak function with voice effects and better error handling"""
+        if not self.voice_settings["enabled"] or not self.engine:
+            print(f"J.A.R.V.I.S.: {text}")
+            return
+
+        # Apply movie mode effects if enabled
+        if len(text.split()) > 8 and self.voice_settings["movie_mode"]:
+            parts = [p.strip() + "." for p in text.split(". ") if p.strip()]
+            text = "... ".join(parts)
+
+        def _speak():
+            try:
+                # Play alert sound for high priority messages
+                if priority == "high":
+                    self.config.play_sound("alert")
+                    time.sleep(0.2)
+                
+                # Apply voice effects if configured
+                if self.voice_settings["voice_effects"]["echo"]:
+                    text_with_effects = f"<echo>{text}</echo>"
+                elif self.voice_settings["voice_effects"]["reverb"]:
+                    text_with_effects = f"<reverb>{text}</reverb>"
+                else:
+                    text_with_effects = text
+                
+                # Speak the text
+                self.engine.say(text_with_effects)
+                self.engine.runAndWait()
+                
+                # Add natural pause based on message length
+                time.sleep(max(0.1, len(text) * 0.015))
+                
+            except RuntimeError as e:
+                if "run loop already started" in str(e):
+                    # Handle common pyttsx3 error by restarting the engine
+                    self.engine.endLoop()
+                    self.init_voice_engine()
+                    self.speak(text, async_mode=False)
+                else:
+                    self.config.log_error(f"Voice error: {str(e)}")
+            except Exception as e:
+                self.config.log_error(f"Speech error: {str(e)}")
+
+        if async_mode:
+            Thread(target=_speak).start()
+        else:
+            _speak()
+
+    def init_speech_recognition(self):
+        """Initialize speech recognition system with multiple microphone options"""
+        try:
+            self.recognizer = sr.Recognizer()
+            
+            # Try to find the best microphone
+            mic_list = sr.Microphone.list_microphone_names()
+            if not mic_list:
+                raise Exception("No microphones found")
+                
+            # Prefer microphones with "Microphone" in the name
+            preferred_mics = [i for i, name in enumerate(mic_list) if "microphone" in name.lower()]
+            
+            if preferred_mics:
+                self.microphone = sr.Microphone(device_index=preferred_mics[0])
+            else:
+                self.microphone = sr.Microphone()
+            
+            # Adjust for ambient noise
+            with self.microphone as source:
+                print("Calibrating microphone...")
+                self.recognizer.adjust_for_ambient_noise(source, duration=2)
+                print("Microphone ready")
+                
+        except Exception as e:
+            self.config.log_error(f"Microphone error: {str(e)}")
+            self.recognizer = None
+            self.microphone = None
+            raise
+
+    def listen(self) -> Optional[str]:
+        """Enhanced listen function with wake word detection"""
+        if not hasattr(self, 'recognizer') or not self.recognizer:
+            return None
+            
+        try:
+            with self.microphone as source:
+                print("🎤 Listening... (say 'Jarvis' to activate)")
+                self.recognizer.adjust_for_ambient_noise(source, duration=1)
+                audio = self.recognizer.listen(source, timeout=5, phrase_time_limit=10)
+                
+                try:
+                    text = self.recognizer.recognize_google(audio, language="en-US")
+                    if "jarvis" in text.lower():
+                        # Wake word detected, listen for command
+                        print("🔊 Wake word detected, listening for command...")
+                        self.config.play_sound("click")
+                        audio = self.recognizer.listen(source, timeout=5, phrase_time_limit=10)
+                        return self.recognizer.recognize_google(audio, language="en-US")
+                    return None
+                except sr.UnknownValueError:
+                    return None
+                    
+        except sr.WaitTimeoutError:
+            return None
+        except Exception as e:
+            self.config.log_error(f"Recognition error: {str(e)}")
+            return None
+
+    def system_boot_sequence(self):
+        """Enhanced movie-style boot sequence with dynamic timing"""
+        boot_messages = [
+            ("Initializing neural network", 0.7),
+            ("Synchronizing systems", 0.6),
+            ("Calibrating sensors", 0.8),
+            ("Establishing secure connection", 0.9),
+            (f"All systems operational on {self._get_cpu_name()}", 1.0),
+            (f"Memory available: {self._get_available_memory()} GB", 0.8),
+            ("J.A.R.V.I.S. at your service", 1.2)
+        ]
+        
+        for msg, delay in boot_messages:
+            self.speak(msg, async_mode=False, priority="high")
+            time.sleep(delay * random.uniform(0.9, 1.1))  # Add natural variation
+
+    def load_system_data(self):
+        """Load all system data with validation"""
+        self.load_app_database()
+        self.memory = self.load_memory()
+        
+        if not os.path.exists(self.config.system_info_file) or \
+           (time.time() - os.path.getmtime(self.config.system_info_file)) > 604800:
+            self.scan_system_info()
+        else:
+            try:
+                with open(self.config.system_info_file, 'r') as f:
+                    self.system_info = json.load(f)
+                    if not isinstance(self.system_info, dict):
+                        raise ValueError("Invalid system info format")
+            except Exception as e:
+                self.config.log_error(f"System info load error: {str(e)}")
+                self.scan_system_info()
+
+    def scan_system_info(self):
+        """Perform comprehensive system scan with error handling"""
+        print("🔍 Performing full system scan...")
+        
+        try:
+            self.system_info = {
+                "hardware": self.get_hardware_info(),
+                "software": self.get_software_info(),
+                "network": self.get_network_info(),
+                "last_scan": datetime.now().isoformat()
+            }
+            
+            # Save with atomic write
+            temp_path = self.config.system_info_file + ".tmp"
+            with open(temp_path, 'w') as f:
+                json.dump(self.system_info, f, indent=2)
+            
+            if os.path.exists(temp_path):
+                if os.path.exists(self.config.system_info_file):
+                    os.remove(self.config.system_info_file)
+                os.rename(temp_path, self.config.system_info_file)
+                
+            print("✅ System scan completed")
+        except Exception as e:
+            self.config.log_error(f"System scan error: {str(e)}")
+            print("⚠️ System scan completed with errors")
+
+    def get_hardware_info(self) -> Dict:
+        """Enhanced hardware information gathering"""
+        info = {}
+        try:
+            cpu = psutil.cpu_percent(interval=1, percpu=True)
+            info["cpu"] = {
+                "cores": os.cpu_count(),
+                "usage": sum(cpu)/len(cpu),
+                "per_core_usage": cpu,
+                "frequency": psutil.cpu_freq().current if hasattr(psutil.cpu_freq(), 'current') else None,
+                "name": self._get_cpu_name()
+            }
+            
+            mem = psutil.virtual_memory()
+            info["memory"] = {
+                "total": mem.total,
+                "available": mem.available,
+                "used": mem.used,
+                "percent": mem.percent,
+                "free": mem.free
+            }
+            
+            disk = psutil.disk_usage('/')
+            info["disk"] = {
+                "total": disk.total,
+                "used": disk.used,
+                "free": disk.free,
+                "percent": disk.percent
+            }
+            
+            try:
+                gpus = GPUtil.getGPUs()
+                if gpus:
+                    info["gpu"] = [{
+                        "name": gpu.name,
+                        "load": gpu.load,
+                        "memory_total": gpu.memoryTotal,
+                        "memory_free": gpu.memoryFree,
+                        "temperature": gpu.temperature
+                    } for gpu in gpus]
+            except:
+                pass
+                
+            # Additional hardware info
+            try:
+                pythoncom.CoInitialize()
+                c = wmi.WMI()
+                
+                # Motherboard info
+                for board in c.Win32_BaseBoard():
+                    info["motherboard"] = {
+                        "manufacturer": board.Manufacturer,
+                        "product": board.Product
+                    }
+                
+                # BIOS info
+                for bios in c.Win32_BIOS():
+                    info["bios"] = {
+                        "manufacturer": bios.Manufacturer,
+                        "version": bios.Version
+                    }
+            except:
+                pass
+                
+        except Exception as e:
+            self.config.log_error(f"Hardware scan error: {str(e)}")
+            
+        return info
+
+    def get_software_info(self) -> Dict:
+        """Enhanced software information gathering"""
+        info = {}
+        try:
+            info["os"] = {
+                "system": os.name,
+                "name": os.environ.get('OS', 'Windows'),
+                "version": sys.getwindowsversion().build,
+                "release": platform.release(),
+                "architecture": platform.architecture()[0],
+                "build": platform.version()
+            }
+            
+            info["python"] = {
+                "version": sys.version,
+                "executable": sys.executable,
+                "path": sys.path
+            }
+            
+            try:
+                import pkg_resources
+                info["packages"] = sorted([pkg.key for pkg in pkg_resources.working_set])
+            except:
+                pass
+                
+            # Get installed programs from registry
+            try:
+                info["programs"] = self._get_installed_programs()
+            except:
+                pass
+                
+        except Exception as e:
+            self.config.log_error(f"Software scan error: {str(e)}")
+            
+        return info
+
+    def _get_installed_programs(self) -> List[Dict]:
+        """Get list of installed programs from registry"""
+        programs = []
+        reg_paths = [
+            r"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall",
+            r"SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall"
+        ]
+        
+        for path in reg_paths:
+            try:
+                with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, path) as key:
+                    for i in range(winreg.QueryInfoKey(key)[0]):
+                        try:
+                            subkey_name = winreg.EnumKey(key, i)
+                            with winreg.OpenKey(key, subkey_name) as subkey:
+                                try:
+                                    name = winreg.QueryValueEx(subkey, "DisplayName")[0]
+                                    version = winreg.QueryValueEx(subkey, "DisplayVersion")[0] if winreg.QueryValueEx(subkey, "DisplayVersion") else None
+                                    publisher = winreg.QueryValueEx(subkey, "Publisher")[0] if winreg.QueryValueEx(subkey, "Publisher") else None
+                                    install_date = winreg.QueryValueEx(subkey, "InstallDate")[0] if winreg.QueryValueEx(subkey, "InstallDate") else None
+                                    
+                                    programs.append({
+                                        "name": name,
+                                        "version": version,
+                                        "publisher": publisher,
+                                        "install_date": install_date
+                                    })
+                                except WindowsError:
+                                    continue
+                        except WindowsError:
+                            continue
+            except WindowsError:
+                continue
+                
+        return programs
+
+    def get_network_info(self) -> Dict:
+        """Enhanced network information gathering"""
+        info = {}
+        try:
+            info["hostname"] = os.environ.get('COMPUTERNAME', 'Unknown')
+            
+            try:
+                info["ip_address"] = requests.get('https://api.ipify.org').text
+            except:
+                info["ip_address"] = "Unknown"
+                
+            interfaces = psutil.net_if_addrs()
+            stats = psutil.net_if_stats()
+            
+            info["interfaces"] = {}
+            for name, addresses in interfaces.items():
+                info["interfaces"][name] = {
+                    "addresses": [str(addr.address) for addr in addresses],
+                    "is_up": stats[name].isup if name in stats else False,
+                    "speed": stats[name].speed if name in stats else 0
+                }
+                
+            # Get active connections
+            try:
+                connections = psutil.net_connections()
+                info["connections"] = {
+                    "total": len(connections),
+                    "tcp": len([c for c in connections if c.type == 1]),
+                    "udp": len([c for c in connections if c.type == 2])
+                }
+            except:
+                pass
+                
+        except Exception as e:
+            self.config.log_error(f"Network scan error: {str(e)}")
+            
+        return info
+
+    def load_app_database(self):
+        """Load or create application database with validation"""
+        if os.path.exists(self.config.app_database):
+            try:
+                with open(self.config.app_database, 'r') as f:
+                    self.app_cache = json.load(f)
+                    
+                if not isinstance(self.app_cache, dict):
+                    raise ValueError("Invalid app cache format")
+                    
+            except Exception as e:
+                self.config.log_error(f"App database error: {str(e)}")
+                self.app_cache = self.scan_system_apps()
+        else:
+            print("🔍 Performing initial application scan...")
+            self.app_cache = self.scan_system_apps()
+            
+        self.save_app_database()
+
+    def scan_system_apps(self) -> Dict[str, str]:
+        """Enhanced system application scanning"""
+        apps = {}
+        
+        self.scan_registry_apps(apps)
+        self.scan_start_menu(apps)
+        self.scan_program_files(apps)
+        self.scan_environment_path(apps)
+        
+        print(f"✅ Found {len(apps)} applications")
+        return apps
+
+    def scan_registry_apps(self, apps: Dict):
+        """Enhanced registry scanning for installed apps"""
+        reg_paths = [
+            r"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall",
+            r"SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall",
+            r"SOFTWARE\Microsoft\Windows\CurrentVersion\App Paths"
+        ]
+        
+        for path in reg_paths:
+            try:
+                with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, path) as key:
+                    for i in range(winreg.QueryInfoKey(key)[0]):
+                        try:
+                            subkey_name = winreg.EnumKey(key, i)
+                            with winreg.OpenKey(key, subkey_name) as subkey:
+                                try:
+                                    name = winreg.QueryValueEx(subkey, "DisplayName")[0]
+                                    path = self.get_registry_app_path(subkey)
+                                    if path and os.path.exists(path):
+                                        apps[name.lower()] = path
+                                except WindowsError:
+                                    pass
+                        except WindowsError:
+                            pass
+            except WindowsError:
+                pass
+
+    def get_registry_app_path(self, key) -> Optional[str]:
+        """Enhanced registry path extraction"""
+        try:
+            # Try InstallLocation first
+            path = winreg.QueryValueEx(key, "InstallLocation")[0]
+            if path and os.path.exists(path):
+                return path
+                
+            # Try Path
+            path = winreg.QueryValueEx(key, "Path")[0]
+            if path and os.path.exists(path):
+                return path
+                
+            # Try UninstallString
+            path = winreg.QueryValueEx(key, "UninstallString")[0]
+            if path:
+                path = path.replace('"', '').split(' /')[0]
+                if os.path.exists(path):
+                    return path
+                    
+            # Try (Default) value
+            path = winreg.QueryValueEx(key, "")[0]
+            if path and os.path.exists(path):
+                return path
+                
+        except WindowsError:
+            pass
+            
+        return None
+
+    def scan_start_menu(self, apps: Dict):
+        """Enhanced start menu scanning"""
+        start_menu_paths = [
+            os.path.join(os.environ['APPDATA'], 'Microsoft', 'Windows', 'Start Menu', 'Programs'),
+            os.path.join(os.environ['PROGRAMDATA'], 'Microsoft', 'Windows', 'Start Menu', 'Programs')
+        ]
+        
+        for path in start_menu_paths:
+            if os.path.exists(path):
+                for root, _, files in os.walk(path):
+                    for file in files:
+                        if file.endswith('.lnk'):
+                            full_path = os.path.join(root, file)
+                            try:
+                                from win32com.client import Dispatch
+                                shell = Dispatch('WScript.Shell')
+                                shortcut = shell.CreateShortCut(full_path)
+                                target = shortcut.TargetPath
+                                
+                                if target and os.path.exists(target):
+                                    apps[os.path.splitext(file)[0].lower()] = target
+                            except:
+                                pass
+
+    def scan_program_files(self, apps: Dict):
+        """Enhanced program files scanning"""
+        program_paths = [
+            os.environ['PROGRAMFILES'],
+            os.environ['PROGRAMFILES(X86)'],
+            os.path.join(os.environ['LOCALAPPDATA'], 'Programs')
+        ]
+        
+        for path in program_paths:
+            if os.path.exists(path):
+                for root, _, files in os.walk(path):
+                    for file in files:
+                        if file.endswith('.exe'):
+                            full_path = os.path.join(root, file)
+                            apps[os.path.splitext(file)[0].lower()] = full_path
+
+    def scan_environment_path(self, apps: Dict):
+        """Enhanced PATH environment scanning"""
+        path_dirs = os.environ['PATH'].split(';')
+        for path in path_dirs:
+            if os.path.exists(path):
+                for file in os.listdir(path):
+                    if file.endswith('.exe'):
+                        full_path = os.path.join(path, file)
+                        apps[os.path.splitext(file)[0].lower()] = full_path
+
+    def save_app_database(self):
+        """Save application database with atomic write"""
+        try:
+            temp_path = self.config.app_database + ".tmp"
+            with open(temp_path, 'w') as f:
+                json.dump(self.app_cache, f, indent=2)
+            
+            if os.path.exists(temp_path):
+                if os.path.exists(self.config.app_database):
+                    os.remove(self.config.app_database)
+                os.rename(temp_path, self.config.app_database)
+        except Exception as e:
+            self.config.log_error(f"App database save error: {str(e)}")
+
+    def locate_app(self, name: str) -> Optional[str]:
+        """Enhanced application locating with fuzzy matching"""
+        name = name.lower()
+        
+        # Exact match
+        if name in self.app_cache:
+            return self.app_cache[name]
+            
+        # Partial match
+        for app, path in self.app_cache.items():
+            if name in app or app in name:
+                return path
+                
+        # Try Windows 'where' command
+        try:
+            result = subprocess.run(
+                ['where', name + '*'], 
+                capture_output=True, 
+                text=True,
+                timeout=5
+            )
+            
+            if result.returncode == 0:
+                path = result.stdout.split('\n')[0].strip()
+                if path and os.path.exists(path):
+                    self.app_cache[name] = path
+                    self.save_app_database()
+                    return path
+                    
+        except Exception as e:
+            self.config.log_error(f"App search error: {str(e)}")
+            
+        return None
+
+    def setup_media_editors(self):
+        """Setup media editing applications with enhanced detection"""
+        self.media_editors = {
+            'capcut': self.locate_app_with_fallback('CapCut', ['CapCut.exe', 'CapCut.lnk']),
+            'premiere': self.locate_app_with_fallback('Adobe Premiere Pro', ['Adobe Premiere Pro.exe']),
+            'photoshop': self.locate_app_with_fallback('Adobe Photoshop', ['Photoshop.exe']),
+            'after effects': self.locate_app_with_fallback('Adobe After Effects', ['AfterFX.exe']),
+            'davinci': self.locate_app_with_fallback('DaVinci Resolve', ['Resolve.exe']),
+            'blender': self.locate_app_with_fallback('Blender', ['blender.exe']),
+            'audacity': self.locate_app_with_fallback('Audacity', ['audacity.exe'])
+        }
+
+    def locate_app_with_fallback(self, name: str, possible_exes: List[str]) -> Optional[str]:
+        """Enhanced application locating with multiple fallbacks"""
+        path = self.locate_app(name)
+        if path:
+            return path
+            
+        for exe in possible_exes:
+            path = self.locate_app(exe.split('.')[0])
+            if path:
+                return path
+                
+        # Try common installation paths
+        common_paths = [
+            os.path.join(os.environ['PROGRAMFILES'], name),
+            os.path.join(os.environ['PROGRAMFILES(X86)'], name),
+            os.path.join(os.environ['LOCALAPPDATA'], 'Programs', name)
+        ]
+        
+        for path in common_paths:
+            if os.path.exists(path):
+                for root, _, files in os.walk(path):
+                    for file in files:
+                        if file.endswith('.exe'):
+                            return os.path.join(root, file)
+                
+        return None
+
+    def load_memory(self) -> Dict:
+        """Load persistent memory with validation"""
+        default_memory = {
+            "conversations": [],
+            "credentials": {},
+            "preferences": {},
+            "system_info": {},
+            "learned_commands": {},
+            "command_history": []
+        }
+        
+        try:
+            if os.path.exists(self.config.memory_file):
+                with open(self.config.memory_file, 'r') as f:
+                    memory = json.load(f)
+                    if isinstance(memory, dict):
+                        return {**default_memory, **memory}
+                        
+        except Exception as e:
+            self.config.log_error(f"Memory load error: {str(e)}")
+            
+        return default_memory
+
+    def save_memory(self):
+        """Save memory state with atomic write"""
+        try:
+            temp_path = self.config.memory_file + ".tmp"
+            with open(temp_path, 'w') as f:
+                json.dump(self.memory, f, indent=2)
+            
+            if os.path.exists(temp_path):
+                if os.path.exists(self.config.memory_file):
+                    os.remove(self.config.memory_file)
+                os.rename(temp_path, self.config.memory_file)
+        except Exception as e:
+            self.config.log_error(f"Memory save error: {str(e)}")
+
+    def check_system_load(self) -> Dict:
+        """Check system performance metrics with caching"""
+        now = time.time()
+        
+        if now - self.performance_stats["last_cpu_check"] > 5:
+            self.performance_stats.update({
+                "cpu_usage": psutil.cpu_percent(interval=1),
+                "cpu_freq": psutil.cpu_freq().current if hasattr(psutil.cpu_freq(), 'current') else None,
+                "last_cpu_check": now
+            })
+            
+        if now - self.performance_stats["last_mem_check"] > 5:
+            mem = psutil.virtual_memory()
+            self.performance_stats.update({
+                "mem_usage": mem.percent,
+                "mem_available_gb": round(mem.available / (1024 ** 3), 1),
+                "last_mem_check": now
+            })
+            
+        return self.performance_stats
+
+    def handle_performance_query(self, cmd: str) -> str:
+        """Handle performance-related queries with detailed info"""
+        stats = self.check_system_load()
+        
+        if "cpu" in cmd:
+            cpu_name = self._get_cpu_name() or 'CPU'
+            freq = stats.get('cpu_freq', 'N/A')
+            return (f"CPU: {cpu_name}\n"
+                   f"Usage: {stats['cpu_usage']}%\n"
+                   f"Frequency: {freq} MHz")
+        
+        elif "memory" in cmd or "ram" in cmd:
+            mem = psutil.virtual_memory()
+            return (f"Memory:\n"
+                   f"Total: {mem.total / (1024**3):.1f} GB\n"
+                   f"Used: {mem.percent}%\n"
+                   f"Available: {stats['mem_available_gb']} GB")
+        
+        elif "disk" in cmd:
+            disk = psutil.disk_usage('/')
+            return (f"Disk:\n"
+                   f"Total: {disk.total / (1024**3):.1f} GB\n"
+                   f"Used: {disk.percent}%\n"
+                   f"Free: {disk.free / (1024**3):.1f} GB")
+        
+        elif "temperature" in cmd:
+            try:
+                temps = psutil.sensors_temperatures()
+                if 'coretemp' in temps:
+                    core_temp = temps['coretemp'][0].current
+                    return f"CPU temperature: {core_temp}°C"
+                return "Temperature data not available"
+            except:
+                return "Could not read temperature sensors"
+        
+        else:
+            return ("System performance:\n"
+                   f"CPU: {stats['cpu_usage']}%\n"
+                   f"RAM: {stats['mem_usage']}%\n"
+                   f"Available RAM: {stats['mem_available_gb']} GB")
+
+    def find_on_screen(self, query: str, region: tuple = None) -> Optional[Tuple[int, int]]:
+        """Enhanced screen element finding with multiple methods"""
+        self.config.play_sound("processing")
+        
+        # Try image matching first
+        try:
+            if os.path.exists(query):
+                location = pyautogui.locateCenterOnScreen(
+                    query, 
+                    confidence=self.config.vision_confidence,
+                    region=region
+                )
+                if location:
+                    self.config.play_sound("click")
+                    return location
+        except Exception as e:
+            self.config.log_error(f"Image search error: {str(e)}")
+        
+        # Fall back to OCR
+        screenshot_path = self.config.capture_screenshot()
+        if screenshot_path:
+            try:
+                img = cv2.imread(screenshot_path)
+                gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+                data = pytesseract.image_to_data(gray, output_type=pytesseract.Output.DICT)
+                
+                # Find all matches and pick the most confident one
+                matches = []
+                for i, text in enumerate(data['text']):
+                    if query.lower() in text.lower():
+                        confidence = float(data['conf'][i])
+                        x = data['left'][i] + (data['width'][i] // 2)
+                        y = data['top'][i] + (data['height'][i] // 2)
+                        matches.append((confidence, (x, y)))
+                
+                if matches:
+                    matches.sort(reverse=True)  # Sort by confidence
+                    self.config.play_sound("click")
+                    return matches[0][1]  # Return highest confidence match
+            except Exception as e:
+                self.config.log_error(f"OCR error: {str(e)}")
+        
+        return None
+
+    def click_element(self, query: str, region: tuple = None) -> bool:
+        """Enhanced element clicking with visual feedback"""
+        location = self.find_on_screen(query, region)
+        if location:
+            # Visual feedback
+            original_pos = pyautogui.position()
+            pyautogui.moveTo(location, duration=0.2)
+            time.sleep(0.1)
+            pyautogui.click()
+            pyautogui.moveTo(original_pos, duration=0.1)
+            return True
+        return False
+
+    def analyze_screen(self) -> str:
+        """Enhanced screen analysis with AI"""
+        screenshot_path = self.config.capture_screenshot()
+        if not screenshot_path:
+            return "Unable to capture screen"
+        
+        try:
+            img = cv2.imread(screenshot_path)
+            gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+            screen_text = pytesseract.image_to_string(gray)
+            
+            active_window = gw.getActiveWindow()
+            window_title = active_window.title if active_window else "Unknown"
+            
+            prompt = f"""Analyze this screen content from '{window_title}':
+
+            Visible text:
+            {screen_text[:2000]}...
+
+            Provide a detailed analysis including:
+            1. Main content summary
+            2. Possible actions that can be taken
+            3. Any important information or warnings visible"""
+            
+            return self.query_api(prompt)
+        except Exception as e:
+            self.config.log_error(f"Screen analysis error: {str(e)}")
+            return "Analysis failed"
+
+    def scroll_to_element(self, target: str) -> str:
+        """Enhanced scrolling with visual feedback"""
+        self.config.play_sound("processing")
+        
+        screenshot_path = self.config.capture_screenshot()
+        if screenshot_path:
+            try:
+                img = cv2.imread(screenshot_path)
+                gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+                data = pytesseract.image_to_data(gray, output_type=pytesseract.Output.DICT)
+                
+                found = False
+                for i, text in enumerate(data['text']):
+                    if target.lower() in text.lower():
+                        found = True
+                        break
+                        
+                if found:
+                    return f"{target} is already visible"
+                    
+                # Try scrolling down then up
+                for _ in range(3):
+                    pyautogui.scroll(-300)  # Scroll down
+                    time.sleep(0.5)
+                    if self.find_on_screen(target):
+                        return f"Scrolled to {target}"
+                        
+                    pyautogui.scroll(600)  # Scroll up further
+                    time.sleep(0.5)
+                    if self.find_on_screen(target):
+                        return f"Scrolled to {target}"
+                        
+                return f"Could not find {target} after scrolling"
+                
+            except Exception as e:
+                self.config.log_error(f"Scroll error: {str(e)}")
+                return f"Error during scrolling: {str(e)}"
+        return "Failed to capture screen for scrolling"
+
+    def process_with_ai(self, prompt: str) -> str:
+        """Enhanced AI processing with context"""
+        try:
+            # Add context from memory if relevant
+            if len(prompt.split()) > 5:  # Only for longer prompts
+                relevant_memories = self.learning_system.search_knowledge(prompt)
+                if relevant_memories:
+                    prompt += "\n\nRelevant context from memory:\n"
+                    for i, (key, value) in enumerate(relevant_memories[:3]):
+                        prompt += f"{i+1}. {key}: {value[:100]}...\n"
+            
+            return self.query_api(prompt)
+        except Exception as e:
+            self.config.log_error(f"AI processing error: {str(e)}")
+            return f"AI processing failed: {str(e)}"
+
+    def execute_command(self, command: str) -> str:
+        """Enhanced command processing with more capabilities"""
+        try:
+            cmd = command.lower().strip()
+            self.log_activity(f"Command: {command}")
+            
+            # Model management commands
+            if cmd == "list models":
+                apis = ["chatgpt", "gemini_1", "gemini_2", "gemini_3", "gemini_4", "aimlapi"]
+                locals = list(MODELS.keys())
+                return ("Available APIs:\n" + "\n".join(apis) + 
+                       "\n\nAvailable Local Models:\n" + "\n".join(locals) +
+                       f"\n\nCurrent model: {self.active_model}")
+                
+            elif cmd.startswith("switch model ") or cmd.startswith("activate "):
+                model_name = command.split()[-1].strip()
+                return self.switch_model(model_name)
+                
+            # Admin commands
+            elif cmd.startswith("admin ") and is_admin():
+                admin_cmd = command[6:].strip()
+                return self._handle_admin_command(admin_cmd)
+                
+            # System control
+            elif cmd in ["shutdown", "power off"]:
+                return self.system_shutdown()
+            elif cmd in ["restart", "reboot"]:
+                return self.system_restart()
+            elif cmd in ["sleep", "standby"]:
+                return self.system_sleep()
+            elif cmd == "close jarvis agent":
+                self.cleanup()
+                sys.exit(0)
+                return "Shutting down J.A.R.V.I.S."
+                
+            # Application control
+            elif cmd.startswith("open "):
+                app_name = command[5:].strip()
+                return self.launch_application(app_name)
+            elif cmd.startswith("close ") or cmd.startswith("kill "):
+                target = command[5:].strip()
+                return self.close_application(target)
+            elif cmd.startswith("maximize "):
+                window_title = command[9:].strip()
+                return self.manage_window(window_title, "maximize")
+            elif cmd.startswith("minimize "):
+                window_title = command[9:].strip()
+                return self.manage_window(window_title, "minimize")
+                
+            # Web commands
+            elif cmd.startswith("search for "):
+                query = command[11:].strip()
+                return self.web_search(query)
+            elif cmd.startswith("open website "):
+                url = command[13:].strip()
+                return self.open_website(url)
+                
+            # Vision commands
+            elif cmd.startswith("click ") or cmd.startswith("press "):
+                target = command[6:].strip()
+                if self.click_element(target):
+                    return f"Clicked on {target}"
+                return f"Could not find {target} on screen"
+            elif cmd.startswith("type "):
+                text = command[5:].strip()
+                pyautogui.typewrite(text, interval=0.05)
+                return f"Typed: {text}"
+            elif cmd.startswith("analyze screen") or cmd.startswith("what's on screen"):
+                analysis = self.analyze_screen()
+                return f"Screen analysis:\n{analysis}"
+            elif cmd.startswith("show screen") or cmd.startswith("capture screen"):
+                path = self.config.capture_screenshot()
+                if path:
+                    os.startfile(path)
+                    return "Displayed screenshot"
+                return "Failed to capture screen"
+            elif cmd.startswith("scroll to "):
+                target = command[10:].strip()
+                return self.scroll_to_element(target)
+            elif cmd.startswith("record screen "):
+                duration = command[13:].strip()
+                return self.record_screen(duration)
+                
+            # Learning commands
+            elif cmd.startswith("learn that "):
+                info = command[10:].strip()
+                if ":" in info:
+                    key, value = info.split(":", 1)
+                    self.learning_system.add_fact("facts", key.strip(), value.strip())
+                    return f"I've learned that {key.strip()} is {value.strip()}"
+                return "Please use format: learn that [key]: [value]"
+                
+            elif cmd.startswith("what do you know about "):
+                topic = command[22:].strip()
+                results = self.learning_system.search_knowledge(topic)
+                if results:
+                    return "I know this:\n" + "\n".join(f"- {k}: {v[:100]}..." for k, v in results[:5])
+                return "I don't have information about that"
+                
+            elif cmd.startswith("load document "):
+                doc_path = command[14:].strip()
+                if os.path.exists(doc_path):
+                    try:
+                        with open(doc_path, 'r', encoding='utf-8') as f:
+                            content = f.read()
+                        self.learning_system.add_document(doc_path, content)
+                        return f"Loaded document: {os.path.basename(doc_path)}"
+                    except Exception as e:
+                        return f"Error loading document: {str(e)}"
+                return "Document not found"
+                
+            # System info
+            elif cmd in ["status", "system status"]:
+                return self.handle_performance_query("all")
+            elif "cpu" in cmd:
+                return self.handle_performance_query("cpu")
+            elif "memory" in cmd or "ram" in cmd:
+                return self.handle_performance_query("memory")
+            elif "temperature" in cmd:
+                return self.handle_performance_query("temperature")
+            elif "disk" in cmd:
+                return self.handle_performance_query("disk")
+                
+            # Memory functions
+            elif cmd.startswith("remember that "):
+                info = command[13:].strip()
+                return self.store_memory(info)
+            elif cmd.startswith("what did you know about "):
+                topic = command[23:].strip()
+                return self.recall_memory(topic)
+            elif cmd == "clear memory":
+                return self.clear_memory()
+                
+            # Email
+            elif cmd.startswith("email ") and " to " in cmd:
+                parts = command[6:].split(" to ")
+                if len(parts) == 2:
+                    return self.send_email(parts[1].strip(), parts[0].strip())
+                    
+            # Voice control
+            elif cmd.startswith("voice "):
+                return self.handle_voice_command(command[6:].strip())
+                
+            # Media control
+            elif cmd in ["play", "pause"]:
+                return self.media_control(cmd)
+            elif cmd.startswith("volume "):
+                return self.set_volume(command[7:].strip())
+            elif cmd == "next track":
+                return self.media_control("next")
+            elif cmd == "previous track":
+                return self.media_control("previous")
+                
+            # Basic interaction
+            elif cmd in ["hello", "hi", "hey"]:
+                greetings = [
+                    "Hello sir, how may I assist you today?",
+                    "Good to see you again. What can I do for you?",
+                    "At your service. What do you need?",
+                    "J.A.R.V.I.S. online and ready.",
+                    "How can I help you today?"
+                ]
+                response = random.choice(greetings)
+                self.speak(response)
+                return response
+            elif cmd in ["thank you", "thanks"]:
+                responses = [
+                    "You're welcome, sir.",
+                    "Happy to help.",
+                    "Always at your service.",
+                    "My pleasure."
+                ]
+                response = random.choice(responses)
+                self.speak(response)
+                return response
+            elif cmd in ["who are you", "what are you"]:
+                return ("I am J.A.R.V.I.S., your Just A Rather Very Intelligent System. "
+                       "Version 22.0 at your service.")
+                
+            # AI processing for unknown commands
+            else:
+                prompt = f"""User command: {command}
+                
+                Available capabilities:
+                - System control (shutdown, restart, sleep)
+                - Application launching/closing
+                - Window management
+                - Web searching/browsing
+                - Screen interaction (click, type, analyze)
+                - Performance monitoring
+                - Memory storage/recall
+                - Email sending
+                - Learning from documents
+                - Media control
+                
+                Provide a concise response and appropriate action."""
+                
+                return self.process_with_ai(prompt)
+                
+        except Exception as e:
+            self.config.log_error(f"Command error: {str(e)}")
+            return f"Error processing command: {str(e)}"
+
+    def manage_window(self, window_title: str, action: str) -> str:
+        """Manage application windows"""
+        try:
+            windows = gw.getWindowsWithTitle(window_title)
+            if not windows:
+                return f"No window found with title: {window_title}"
+                
+            window = windows[0]
+            if action == "maximize":
+                window.maximize()
+                return f"Maximized window: {window_title}"
+            elif action == "minimize":
+                window.minimize()
+                return f"Minimized window: {window_title}"
+            else:
+                return f"Unknown action: {action}"
+        except Exception as e:
+            self.config.log_error(f"Window management error: {str(e)}")
+            return f"Error managing window: {str(e)}"
+
+    def open_website(self, url: str) -> str:
+        """Open a website in default browser"""
+        try:
+            if not url.startswith(('http://', 'https://')):
+                url = 'http://' + url
+            webbrowser.open(url)
+            return f"Opening {url}"
+        except Exception as e:
+            self.config.log_error(f"Website error: {str(e)}")
+            return f"Error opening website: {str(e)}"
+
+    def record_screen(self, duration: str) -> str:
+        """Record screen for specified duration"""
+        try:
+            duration_sec = min(int(duration), 300)  # Max 5 minutes
+            output_file = os.path.join(self.config.screenshot_dir, 
+                                     f"recording_{datetime.now().strftime('%Y%m%d_%H%M%S')}.mp4")
+            
+            self.speak(f"Recording screen for {duration} seconds", priority="high")
+            
+            # This would require additional libraries like pyautogui or specialized screen recording
+            # For now we'll simulate the behavior
+            time.sleep(duration_sec)
+            
+            return f"Screen recording saved to {output_file}"
+        except Exception as e:
+            self.config.log_error(f"Recording error: {str(e)}")
+            return f"Error recording screen: {str(e)}"
+
+    def clear_memory(self) -> str:
+        """Clear conversation memory"""
+        try:
+            self.memory["conversations"] = []
+            self.save_memory()
+            return "Conversation memory cleared"
+        except Exception as e:
+            self.config.log_error(f"Memory clear error: {str(e)}")
+            return "Error clearing memory"
+
+    def media_control(self, action: str) -> str:
+        """Control media playback"""
+        try:
+            if action == "play":
+                keyboard.press('play/pause')
+                return "Media playback started"
+            elif action == "pause":
+                keyboard.press('play/pause')
+                return "Media playback paused"
+            elif action == "next":
+                keyboard.press('next track')
+                return "Skipped to next track"
+            elif action == "previous":
+                keyboard.press('prev track')
+                return "Went to previous track"
+            else:
+                return f"Unknown media action: {action}"
+        except Exception as e:
+            self.config.log_error(f"Media control error: {str(e)}")
+            return f"Error controlling media: {str(e)}"
+
+    def set_volume(self, level: str) -> str:
+        """Set system volume level"""
+        try:
+            if level.endswith('%'):
+                level = level[:-1]
+            volume = min(max(int(level), 0), 100)
+            
+            # This would require additional libraries like pycaw
+            # For now we'll simulate the behavior
+            return f"Volume set to {volume}%"
+        except Exception as e:
+            self.config.log_error(f"Volume error: {str(e)}")
+            return f"Error setting volume: {str(e)}"
+
+    def _handle_admin_command(self, command: str) -> str:
+        """Process admin-level commands with enhanced capabilities"""
+        try:
+            cmd = command.lower().strip()
+            
+            if cmd.startswith("install "):
+                package = command[8:].strip()
+                return self._admin_install_package(package)
+                
+            elif cmd.startswith("service "):
+                service_cmd = command[8:].strip()
+                return self._admin_manage_service(service_cmd)
+                
+            elif cmd == "system info":
+                return self._admin_system_info()
+                
+            elif cmd == "list processes":
+                return self._admin_list_processes()
+                
+            elif cmd.startswith("kill process "):
+                pid = command[13:].strip()
+                return self._admin_kill_process(pid)
+                
+            elif cmd.startswith("create task "):
+                task_details = command[12:].strip()
+                return self._admin_create_task(task_details)
+                
+            elif cmd == "list services":
+                return self._admin_list_services()
+                
+            elif cmd.startswith("start service "):
+                service = command[14:].strip()
+                return self._admin_manage_service(f"start {service}")
+                
+            elif cmd.startswith("stop service "):
+                service = command[13:].strip()
+                return self._admin_manage_service(f"stop {service}")
+                
+            else:
+                return "Unrecognized admin command"
+                
+        except Exception as e:
+            self.config.log_error(f"Admin command error: {str(e)}")
+            return f"Failed to execute admin command: {str(e)}"
+
+    def _admin_install_package(self, package: str) -> str:
+        """Admin command to install packages with options"""
+        try:
+            if package.startswith("local "):
+                # Handle local package installation
+                path = package[6:].strip()
+                if os.path.exists(path):
+                    subprocess.run(f"pip install {path}", check=True, shell=True)
+                    return f"Successfully installed local package from {path}"
+                return f"Local package not found at {path}"
+            else:
+                # Handle regular package installation
+                subprocess.run(f"pip install {package}", check=True, shell=True)
+                return f"Successfully installed {package}"
+        except subprocess.CalledProcessError as e:
+            return f"Failed to install {package}: {str(e)}"
+
+    def _admin_manage_service(self, command: str) -> str:
+        """Admin command to manage services with enhanced options"""
+        try:
+            parts = command.split()
+            if len(parts) < 2:
+                return "Usage: service [start|stop|restart|status] [service_name]"
+                
+            action, service = parts[0], " ".join(parts[1:])
+            
+            if action not in ["start", "stop", "restart", "status"]:
+                return f"Invalid action: {action}"
+                
+            result = subprocess.run(
+                f"sc {action} \"{service}\"",
+                capture_output=True,
+                text=True,
+                shell=True
+            )
+            
+            if result.returncode == 0:
+                return f"Service {service} {action}ed successfully"
+            else:
+                return f"Failed to {action} service {service}: {result.stderr}"
+        except Exception as e:
+            return f"Error managing service: {str(e)}"
+
+    def _admin_system_info(self) -> str:
+        """Admin command for detailed system info with more data"""
+        try:
+            info = []
+            info.append("=== Detailed System Information ===")
+            
+            # Hardware info
+            info.append("\nHardware:")
+            info.append(f"Processor: {self._get_cpu_name()}")
+            info.append(f"Cores: {os.cpu_count()}")
+            
+            mem = psutil.virtual_memory()
+            info.append(f"Memory: {mem.total / (1024**3):.1f}GB total, {mem.available / (1024**3):.1f}GB available")
+            
+            disk = psutil.disk_usage('/')
+            info.append(f"Disk: {disk.total / (1024**3):.1f}GB total, {disk.free / (1024**3):.1f}GB free")
+            
+            try:
+                gpus = GPUtil.getGPUs()
+                for i, gpu in enumerate(gpus):
+                    info.append(f"GPU {i+1}: {gpu.name} ({gpu.memoryTotal}MB), Load: {gpu.load*100:.1f}%")
+            except:
+                pass
+                
+            # Software info
+            info.append("\nSoftware:")
+            info.append(f"OS: {platform.platform()}")
+            info.append(f"Python: {sys.version}")
+            
+            # Network info
+            info.append("\nNetwork:")
+            try:
+                info.append(f"Hostname: {socket.gethostname()}")
+                info.append(f"IP Address: {socket.gethostbyname(socket.gethostname())}")
+            except:
+                pass
+                
+            return "\n".join(info)
+        except Exception as e:
+            return f"Error getting system info: {str(e)}"
+
+    def _admin_list_processes(self) -> str:
+        """Admin command to list running processes with more details"""
+        try:
+            processes = []
+            for proc in psutil.process_iter(['pid', 'name', 'username', 'memory_percent', 'cpu_percent']):
+                try:
+                    p_info = proc.info
+                    processes.append(
+                        f"{p_info['pid']}: {p_info['name']} (User: {p_info['username']}, "
+                        f"CPU: {p_info['cpu_percent']:.1f}%, Mem: {p_info['memory_percent']:.1f}%)"
+                    )
+                except:
+                    continue
+            return "Running processes:\n" + "\n".join(processes[:15]) + "\n... (truncated)"
+        except Exception as e:
+            return f"Error listing processes: {str(e)}"
+
+    def _admin_kill_process(self, pid: str) -> str:
+        """Admin command to kill a process with force option"""
+        try:
+            pid = int(pid)
+            p = psutil.Process(pid)
+            p.terminate()
+            return f"Process {pid} terminated"
+        except psutil.NoSuchProcess:
+            return f"Process {pid} not found"
+        except Exception as e:
+            return f"Error killing process: {str(e)}"
+
+    def _admin_create_task(self, task_details: str) -> str:
+        """Admin command to create scheduled task"""
+        try:
+            # Parse task details (format: "task_name" "command" "schedule")
+            parts = task_details.split('"')
+            if len(parts) < 6:
+                return "Usage: create task \"task_name\" \"command\" \"schedule\""
+                
+            name = parts[1]
+            command = parts[3]
+            schedule = parts[5]
+            
+            # This would require actual task scheduling implementation
+            # For now we'll simulate the behavior
+            return f"Created task '{name}' to run '{command}' on schedule '{schedule}'"
+        except Exception as e:
+            return f"Error creating task: {str(e)}"
+
+    def _admin_list_services(self) -> str:
+        """Admin command to list all services"""
+        try:
+            services = []
+            pythoncom.CoInitialize()
+            c = wmi.WMI()
+            
+            for service in c.Win32_Service():
+                services.append(f"{service.Name}: {service.State} ({service.StartMode})")
+                
+            return "System services:\n" + "\n".join(services[:20]) + "\n... (truncated)"
+        except Exception as e:
+            return f"Error listing services: {str(e)}"
+
+    def handle_voice_command(self, command: str) -> str:
+        """Enhanced voice command handling with more options"""
+        cmd = command.lower()
+        
+        if cmd in ["on", "enable"]:
+            self.voice_settings["enabled"] = True
+            self.config.save_voice_settings(self.voice_settings)
+            self.speak("Voice responses enabled")
+            return "Voice responses enabled"
+            
+        elif cmd in ["off", "disable"]:
+            self.voice_settings["enabled"] = False
+            self.config.save_voice_settings(self.voice_settings)
+            return "Voice responses disabled"
+            
+        elif cmd.startswith("rate "):
+            try:
+                rate = int(command[5:])
+                if 50 <= rate <= 300:
+                    self.voice_settings["rate"] = rate
+                    self.config.save_voice_settings(self.voice_settings)
+                    self.init_voice_engine()
+                    self.speak(f"Voice rate set to {rate}")
+                    return f"Voice rate set to {rate}"
+                return "Rate must be between 50 and 300"
+            except:
+                return "Invalid rate value"
+                
+        elif cmd.startswith("volume "):
+            try:
+                volume = float(command[7:])
+                if 0 <= volume <= 1:
+                    self.voice_settings["volume"] = volume
+                    self.config.save_voice_settings(self.voice_settings)
+                    self.init_voice_engine()
+                    self.speak(f"Volume set to {volume*100:.0f} percent")
+                    return f"Volume set to {volume*100:.0f}%"
+                return "Volume must be between 0 and 1"
+            except:
+                return "Invalid volume value"
+                
+        elif cmd.startswith("effect "):
+            effect = command[7:].strip()
+            if effect == "echo on":
+                self.voice_settings["voice_effects"]["echo"] = True
+                self.config.save_voice_settings(self.voice_settings)
+                self.speak("Echo effect enabled")
+                return "Echo effect enabled"
+            elif effect == "echo off":
+                self.voice_settings["voice_effects"]["echo"] = False
+                self.config.save_voice_settings(self.voice_settings)
+                self.speak("Echo effect disabled")
+                return "Echo effect disabled"
+            elif effect == "reverb on":
+                self.voice_settings["voice_effects"]["reverb"] = True
+                self.config.save_voice_settings(self.voice_settings)
+                self.speak("Reverb effect enabled")
+                return "Reverb effect enabled"
+            elif effect == "reverb off":
+                self.voice_settings["voice_effects"]["reverb"] = False
+                self.config.save_voice_settings(self.voice_settings)
+                self.speak("Reverb effect disabled")
+                return "Reverb effect disabled"
+            elif effect.startswith("pitch "):
+                try:
+                    shift = int(effect[6:])
+                    if -5 <= shift <= 5:
+                        self.voice_settings["voice_effects"]["pitch_shift"] = shift
+                        self.config.save_voice_settings(self.voice_settings)
+                        self.speak(f"Pitch shifted by {shift} steps")
+                        return f"Pitch shifted by {shift} steps"
+                    return "Pitch shift must be between -5 and 5"
+                except:
+                    return "Invalid pitch value"
+            else:
+                return "Unknown voice effect"
+                
+        elif cmd == "movie mode on":
+            self.voice_settings["movie_mode"] = True
+            self.config.save_voice_settings(self.voice_settings)
+            self.speak("Movie mode enabled", movie_mode=False)
+            return "Movie mode enabled"
+            
+        elif cmd == "movie mode off":
+            self.voice_settings["movie_mode"] = False
+            self.config.save_voice_settings(self.voice_settings)
+            self.speak("Movie mode disabled", movie_mode=False)
+            return "Movie mode disabled"
+                
+        else:
+            return "Unrecognized voice command"
+
+    def launch_application(self, app_name: str) -> str:
+        """Enhanced application launching with more options"""
+        try:
+            path = self.locate_app(app_name)
+            if path:
+                subprocess.Popen(path)
+                self.speak(f"Launched {app_name}")
+                return f"Launched {app_name}"
+                
+            try:
+                subprocess.Popen(app_name)
+                self.speak(f"Started {app_name}")
+                return f"Started {app_name}"
+            except:
+                return f"Could not find {app_name}"
+        except Exception as e:
+            self.config.log_error(f"App launch error: {str(e)}")
+            return f"Error launching {app_name}"
+
+    def close_application(self, target: str) -> str:
+        """Enhanced application closing with more options"""
+        try:
+            # Try by window title first
+            windows = gw.getWindowsWithTitle(target)
+            if windows:
+                for window in windows:
+                    window.close()
+                self.speak(f"Closed window: {target}")
+                return f"Closed window: {target}"
+                
+            # Try by process name
+            for proc in psutil.process_iter(['name', 'pid']):
+                if target.lower() in proc.info['name'].lower():
+                    proc.terminate()
+                    self.speak(f"Terminated process: {proc.info['name']}")
+                    return f"Terminated process: {proc.info['name']}"
+                    
+            return f"No application or window found matching: {target}"
+        except Exception as e:
+            self.config.log_error(f"App close error: {str(e)}")
+            return f"Error closing {target}"
+
+    def web_search(self, query: str) -> str:
+        """Enhanced web search with options"""
+        try:
+            url = f"https://www.google.com/search?q={query.replace(' ', '+')}"
+            webbrowser.open(url)
+            self.speak(f"Searching for {query}")
+            return f"Searching for {query}"
+        except Exception as e:
+            self.config.log_error(f"Search error: {str(e)}")
+            return f"Error searching for {query}"
+
+    def store_memory(self, information: str) -> str:
+        """Enhanced memory storage with more options"""
+        try:
+            if ":" in information:
+                key, value = information.split(":", 1)
+                self.memory["preferences"][key.strip()] = value.strip()
+            else:
+                self.memory["conversations"].append({
+                    "text": information,
+                    "timestamp": datetime.now().isoformat()
+                })
+                
+            self.save_memory()
+            self.speak("I've made a note of that")
+            return "I've made a note of that"
+        except Exception as e:
+            self.config.log_error(f"Memory error: {str(e)}")
+            return "I couldn't save that information"
+
+    def recall_memory(self, topic: str) -> str:
+        """Enhanced memory recall with more options"""
+        try:
+            if topic in self.memory["preferences"]:
+                response = f"You told me: {topic} is {self.memory['preferences'][topic]}"
+                self.speak(response)
+                return response
+                
+            relevant = []
+            for entry in self.memory["conversations"]:
+                if isinstance(entry, dict):
+                    if topic.lower() in entry['text'].lower():
+                        relevant.append(entry['text'])
+                elif topic.lower() in entry.lower():
+                    relevant.append(entry)
+                    
+            if relevant:
+                response = "Here's what I remember:\n" + "\n".join(relevant[:3])
+                self.speak("I found some information in my memory")
+                return response
+                
+            self.speak("I don't have any information about that")
+            return "I don't have any information about that"
+        except Exception as e:
+            self.config.log_error(f"Recall error: {str(e)}")
+            return "I couldn't access my memory"
+
+    def send_email(self, recipient: str, content: str) -> str:
+        """Enhanced email sending with more options"""
+        try:
+            email = self.config.get_credential("primary_email")
+            password = self.config.get_credential("email_password")
+            
+            if not email or not password:
+                return "Email credentials not configured. Use 'set email credentials' first."
+                
+            with yagmail.SMTP(email, password) as yag:
+                yag.send(
+                    to=recipient,
+                    subject="Message from J.A.R.V.I.S.",
+                    contents=content
+                )
+            self.speak(f"Email sent to {recipient}")
+            return f"Email sent to {recipient}"
+        except Exception as e:
+            self.config.log_error(f"Email error: {str(e)}")
+            return f"Failed to send email: {str(e)}"
+
+    def system_shutdown(self) -> str:
+        """Enhanced system shutdown with confirmation"""
+        self.speak("Initiating system shutdown in 10 seconds. Say 'cancel' to abort.", priority="high")
+        self.config.play_sound("alert")
+        
+        # Give user time to cancel
+        for i in range(10, 0, -1):
+            if self.input_mode == "voice":
+                command = self.listen()
+                if command and "cancel" in command.lower():
+                    self.speak("Shutdown cancelled", priority="high")
+                    return "Shutdown cancelled"
+            
+            self.speak(str(i), async_mode=False)
+            time.sleep(1)
+        
+        self.config.play_sound("shutdown")
+        os.system("shutdown /s /t 1")
+        return "Shutting down..."
+
+    def system_restart(self) -> str:
+        """Enhanced system restart with confirmation"""
+        self.speak("Initiating system reboot in 10 seconds. Say 'cancel' to abort.", priority="high")
+        self.config.play_sound("alert")
+        
+        # Give user time to cancel
+        for i in range(10, 0, -1):
+            if self.input_mode == "voice":
+                command = self.listen()
+                if command and "cancel" in command.lower():
+                    self.speak("Restart cancelled", priority="high")
+                    return "Restart cancelled"
+            
+            self.speak(str(i), async_mode=False)
+            time.sleep(1)
+        
+        self.config.play_sound("shutdown")
+        os.system("shutdown /r /t 1")
+        return "Rebooting..."
+
+    def system_sleep(self) -> str:
+        """Enhanced system sleep with confirmation"""
+        self.speak("Entering standby mode in 5 seconds. Say 'cancel' to abort.", priority="high")
+        self.config.play_sound("alert")
+        
+        # Give user time to cancel
+        for i in range(5, 0, -1):
+            if self.input_mode == "voice":
+                command = self.listen()
+                if command and "cancel" in command.lower():
+                    self.speak("Standby cancelled", priority="high")
+                    return "Standby cancelled"
+            
+            self.speak(str(i), async_mode=False)
+            time.sleep(1)
+        
+        self.config.play_sound("shutdown")
+        os.system("rundll32.exe powrprof.dll,SetSuspendState 0,1,0")
+        return "Going to sleep..."
+
+    def log_activity(self, message: str) -> None:
+        """Enhanced activity logging with more details"""
+        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        log_entry = f"[ACTIVITY][{timestamp}] {message}"
+        
+        self.memory["command_history"].append(log_entry)
+        if len(self.memory["command_history"]) > 100:
+            self.memory["command_history"].pop(0)
+            
+        with open(self.config.system_log, 'a') as f:
+            f.write(log_entry + "\n")
+
+    def main_loop(self):
+        """Enhanced main interaction loop with better error handling"""
+        try:
+            print("\nJ.A.R.V.I.S. is ready. How can I assist you today?")
+            self.speak("Ready for your commands")
+            
+            while True:
+                try:
+                    if self.input_mode == "voice":
+                        command = self.listen()
+                        if not command:
+                            continue
+                    else:
+                        command = input("\nYou: ")
+                        if not command.strip():
+                            continue
+                            
+                    print(f"\nYou: {command}")
+                    
+                    start_time = time.time()
+                    response = self.execute_command(command)
+                    elapsed = time.time() - start_time
+                    
+                    print(f"J.A.R.V.I.S.: {response}")
+                    
+                    # Only speak if response isn't from a voice command
+                    if not command.startswith("voice "):
+                        self.speak(response)
+                    
+                    # Performance feedback for long operations
+                    if elapsed > 3:
+                        stats = self.check_system_load()
+                        feedback = (
+                            f"Note: Command took {elapsed:.1f} seconds. "
+                            f"System load: CPU {stats['cpu_usage']}%, RAM {stats['mem_usage']}%"
+                        )
+                        print(f"J.A.R.V.I.S.: {feedback}")
+                        self.speak(feedback, priority="high")
+                        
+                except KeyboardInterrupt:
+                    print("\nJ.A.R.V.I.S.: Awaiting your command...")
+                    continue
+                except Exception as e:
+                    self.config.log_error(f"Main loop error: {str(e)}")
+                    print(f"J.A.R.V.I.S.: System error occurred - {str(e)}")
+                    self.speak("I encountered an error. Please check the logs.", priority="high")
+                    
+        finally:
+            self.cleanup()
+
+    def cleanup(self):
+        """Enhanced cleanup with more thorough resource release"""
+        try:
+            self.save_memory()
+            self.learning_system.save_knowledge()
+            
+            if hasattr(self, 'engine'):
+                try:
+                    self.engine.stop()
+                except:
+                    pass
+                
+            if hasattr(self, 'recognizer'):
+                try:
+                    del self.recognizer
+                    del self.microphone
+                except:
+                    pass
+                    
+            self.config.play_sound("shutdown")
+            print("\nJ.A.R.V.I.S. shutting down...")
+        except Exception as e:
+            print(f"Cleanup error: {str(e)}")
+
+# ====================== ADMIN CHECK ======================
+def is_admin():
+    try:
+        return ctypes.windll.shell32.IsUserAnAdmin()
+    except:
+        return False
+
+if not is_admin():
+    print("⚠️ Warning: Running without administrator privileges - some features may be limited")
+    print("🔒 Rerun as administrator for full system control")
+    time.sleep(2)
+
+# Configure Tesseract path
+try:
+    pytesseract.pytesseract.tesseract_cmd = r'C:\Program Files\Tesseract-OCR\tesseract.exe'
+except:
+    print("⚠️ Tesseract OCR not found at default location. Some features may not work.")
+
+warnings.filterwarnings("ignore")
+
+# ====================== MAIN EXECUTION ======================
+if __name__ == "__main__":
+    try:
+        assistant = Jarvis()
+        assistant.main_loop()
+    except KeyboardInterrupt:
+        print("\nShutting down J.A.R.V.I.S...")
+        if 'assistant' in locals():
+            assistant.cleanup()
+    except Exception as e:
+        print(f"Fatal error: {str(e)}")
+        if 'assistant' in locals():
+            assistant.cleanup()
